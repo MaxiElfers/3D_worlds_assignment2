@@ -1,6 +1,10 @@
 using CesiumForUnity;
 using UnityEngine;
 using Npgsql;
+using UnityEngine.UI;
+using System.Collections;
+using TMPro;
+using Unity.Mathematics;
 
 public class TouchRaycaster : MonoBehaviour
 {
@@ -12,8 +16,8 @@ public class TouchRaycaster : MonoBehaviour
     public float lineWidth = 0.5f;
     public GameObject GeoRefFolder;
     public GameObject panel;  // Reference to the panel GameObject
+    public PopupManager panelScript;  // Reference to the PopupManager script
     public CesiumCameraController CesiumCamera; // Reference to the CesiumCamera GameObject
-    private string connectionString = "Host=localhost;Port=5432;Username=postgres;Password=Maxi0310;Database=postgres";
     public bool isPanelOpen = false;
 
     void Start()
@@ -66,12 +70,14 @@ public class TouchRaycaster : MonoBehaviour
         {
             float groundLevel = GetGroundLevel(hitPoint);
             Vector3 spawnPosition = new Vector3(hitPoint.x, groundLevel, hitPoint.z);
-            var instantiatedObject = Instantiate(cubePrefab, spawnPosition, Quaternion.Euler(0, 0, 0));
-            instantiatedObject.AddComponent<CesiumGlobeAnchor>();
+            GameObject instantiatedObject = Instantiate(cubePrefab, spawnPosition, Quaternion.Euler(0, 0, 0));
+            CesiumGlobeAnchor globeAnchor = instantiatedObject.AddComponent<CesiumGlobeAnchor>();
             instantiatedObject.transform.parent = GeoRefFolder.transform;
 
+            double3 pos = new double3(globeAnchor.longitudeLatitudeHeight.x, globeAnchor.longitudeLatitudeHeight.y, globeAnchor.longitudeLatitudeHeight.z);
+
             // Insert the point into the PostGIS database
-            ShowPopup();
+            ShowPopup(instantiatedObject, pos);
             // InsertPointIntoDatabase(hitPoint);
         }
     }
@@ -96,7 +102,7 @@ public class TouchRaycaster : MonoBehaviour
                 instantiatedObject.transform.parent = GeoRefFolder.transform;
 
                 // Insert the point into the PostGIS database
-                InsertPointIntoDatabase(hitPoint);
+                // InsertPointIntoDatabase(hitPoint);
             }
         }
         else
@@ -128,21 +134,6 @@ public class TouchRaycaster : MonoBehaviour
         }
     }
 
-    void InsertPointIntoDatabase(Vector3 point)
-    {
-        string query = $"INSERT INTO table_scooter(geom, metadata) VALUES(ST_GeomFromText('POINTZ({point.x} {point.y} {point.z})', 4326), 'Scooter')";
-
-        using (var connection = new NpgsqlConnection(connectionString))
-        {
-            connection.Open();
-            using (var cmd = new NpgsqlCommand(query, connection))
-            {
-                cmd.ExecuteNonQuery();
-            }
-            connection.Close();
-        }
-    }
-
     float GetGroundLevel(Vector3 point)
     {
         RaycastHit hit;
@@ -154,10 +145,8 @@ public class TouchRaycaster : MonoBehaviour
         return point.y;
     }
 
-    void ShowPopup()
+    void ShowPopup(GameObject instantiatedObject, double3 point)
     {
-        int popupHeight = 900;
-        int popupWidth = 1000;
         int screenWidth = Screen.width;
         int screenHeight = Screen.height;
         var mouseClickPos = Input.mousePosition;
@@ -179,11 +168,22 @@ public class TouchRaycaster : MonoBehaviour
         panel.transform.position = panelPosition;
         isPanelOpen = true;
         panel.SetActive(true);
+        panelScript.instantiatedObject = instantiatedObject;
+        panelScript.point = point;
+        Debug.Log("Point" + point);  
+        panelScript.startPopup();
     }
 
-    public void HidePopup()
+    public void startHidePopup()
     {
-        isPanelOpen = false;
+        CesiumCamera.enableMovement = true;
+        CesiumCamera.enableRotation = true;
         panel.SetActive(false);
+        StartCoroutine(HidePopup());
+    } 
+    private IEnumerator HidePopup()
+    {
+        yield return new WaitForSeconds(1);
+        isPanelOpen = false;
     }
 }
